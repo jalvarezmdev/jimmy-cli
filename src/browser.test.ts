@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
+import { chromium } from 'playwright';
 import { JimmyBrowser } from './browser.js';
 import { createSession, loadSession } from './sessions.js';
+import { runRequest, type WorkerEvent } from './raycast.js';
 
 interface FixtureRequest {
   prompt: string;
@@ -49,6 +52,7 @@ async function createFixture(t: TestContext): Promise<ChatFixture> {
       const scroller = document.createElement('div');
       scroller.id = 'scroller';
       for (const message of messages) {
+        if (message.role === 'system') continue;
         const row = document.createElement('div');
         row.className = 'flex flex-1';
         const avatar = document.createElement('img');
@@ -229,6 +233,7 @@ test('fast UI replies, code extraction, two turns, and persistent-profile resume
   const session = await createSession(root);
   const browser = await JimmyBrowser.open(session, { baseUrl: fixture.baseUrl, timeoutMs: 5_000 });
   fixture.browsers.push(browser);
+  assert.deepEqual(await browser.getMessages(), []);
   const answer = await browser.send('format');
   assert.equal(answer, FORMATTED_ANSWER);
   assert.equal(await browser.send('second'), 'The conversation contains 2 earlier messages.');
@@ -237,10 +242,41 @@ test('fast UI replies, code extraction, two turns, and persistent-profile resume
   const closing = browser.close();
   assert.strictEqual(browser.close(), closing);
   await closing;
+  await assert.rejects(browser.getMessages(), /closed/);
 
   const resumed = await JimmyBrowser.open(saved, { baseUrl: fixture.baseUrl, timeoutMs: 5_000 });
   fixture.browsers.push(resumed);
   assert.equal(await resumed.send('third'), 'The conversation contains 4 earlier messages.');
+  assert.deepEqual(fixture.requests.map((request) => request.historyCount), [0, 2, 4]);
+  const expected = [
+    { role: 'user', content: 'format' },
+    { role: 'assistant', content: FORMATTED_ANSWER },
+    { role: 'user', content: 'second' },
+    { role: 'assistant', content: 'The conversation contains 2 earlier messages.' },
+    { role: 'user', content: 'third' },
+    { role: 'assistant', content: 'The conversation contains 4 earlier messages.' },
+  ];
+  assert.deepEqual(await resumed.getMessages(), expected);
+  await resumed.close();
+  const events: WorkerEvent[] = [];
+  let historyBrowser: JimmyBrowser | undefined;
+  await runRequest({ type: 'history', sessionId: session.id }, (event) => {
+    assert.equal(existsSync(join(session.directory, 'session.lock')), false);
+    events.push(event);
+  }, {
+    sessionsDirectory: root,
+    openBrowser: async (loaded) => {
+      historyBrowser = await JimmyBrowser.open(loaded, { baseUrl: fixture.baseUrl, timeoutMs: 5_000 });
+      fixture.browsers.push(historyBrowser);
+      return historyBrowser;
+    },
+  });
+  assert.deepEqual(events, [{ type: 'history', sessionId: session.id, messages: expected }]);
+  assert(historyBrowser);
+  await assert.rejects(historyBrowser.getMessages(), /closed/);
+  const reopened = await JimmyBrowser.open(saved, { baseUrl: fixture.baseUrl, timeoutMs: 5_000 });
+  fixture.browsers.push(reopened);
+  assert.deepEqual(await reopened.getMessages(), expected);
   assert.deepEqual(fixture.requests.map((request) => request.historyCount), [0, 2, 4]);
 });
 
@@ -340,4 +376,80 @@ test('an in-use dedicated profile gets a useful error', async (t) => {
   const reopened = await JimmyBrowser.open(session, { baseUrl: fixture.baseUrl, timeoutMs: 5_000 });
   fixture.browsers.push(reopened);
   assert.equal(await reopened.send('after-release'), 'The conversation contains 2 earlier messages.');
+});
+
+test('history reads persisted system-filtered content and fails closed for corrupt or missing storage', async (t) => {
+  const fixture = await createFixture(t);
+  const session = await createSession(fixture.root);
+  const browser = await JimmyBrowser.open(session, { baseUrl: fixture.baseUrl, timeoutMs: 5_000 });
+  fixture.browsers.push(browser);
+  await browser.send('format');
+  await browser.close();
+  const saved = await loadSession(session.id, fixture.root);
+  assert(saved.chatId);
+  const expected = [
+    { role: 'user', content: 'format' },
+    { role: 'assistant', content: FORMATTED_ANSWER },
+  ];
+  const setStorage = async (raw: string | null): Promise<void> => {
+    const context = await chromium.launchPersistentContext(join(session.directory, 'browser'), { headless: true });
+    try {
+      const page = context.pages()[0] ?? await context.newPage();
+      await page.goto(fixture.baseUrl);
+      await page.evaluate(({ key, value }) => {
+        if (value === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, value);
+      }, { key: `chat_${saved.chatId}`, value: raw });
+    } finally {
+      await context.close();
+    }
+  };
+  const events: WorkerEvent[] = [];
+  const readHistory = (): Promise<void> => runRequest({ type: 'history', sessionId: session.id }, (event) => {
+    assert.equal(existsSync(join(session.directory, 'session.lock')), false);
+    events.push(event);
+  }, {
+    sessionsDirectory: fixture.root,
+    openBrowser: async (loaded) => {
+      const opened = await JimmyBrowser.open(loaded, { baseUrl: fixture.baseUrl, timeoutMs: 1_000 });
+      fixture.browsers.push(opened);
+      return opened;
+    },
+  });
+  await setStorage(JSON.stringify([{ role: 'system', content: 'Not a conversation message.' }, ...expected]));
+  await readHistory();
+  assert.deepEqual(events.splice(0), [{ type: 'history', sessionId: session.id, messages: expected }]);
+  for (const raw of [
+    null, '{', '{}', '[]',
+    JSON.stringify([{ role: 'user', content: 123 }]),
+    JSON.stringify([{ role: 'tool', content: 'invalid role' }]),
+    JSON.stringify([{ role: 'system', content: 'No user history' }]),
+  ]) {
+    await setStorage(raw);
+    await assert.rejects(readHistory(), /missing, corrupt, or did not finish loading/);
+    assert.deepEqual(events, []);
+    assert.equal(existsSync(join(session.directory, 'session.lock')), false);
+  }
+  await setStorage(JSON.stringify(expected));
+  await readHistory();
+  assert.deepEqual(events, [{ type: 'history', sessionId: session.id, messages: expected }]);
+  assert.equal(fixture.requests.length, 1);
+});
+
+test('history for an unused session is empty and does not create a conversation', async (t) => {
+  const fixture = await createFixture(t);
+  const session = await createSession(fixture.root);
+  const events: WorkerEvent[] = [];
+  await runRequest({ type: 'history', sessionId: session.id }, (event) => events.push(event), {
+    sessionsDirectory: fixture.root,
+    openBrowser: async (loaded) => {
+      const browser = await JimmyBrowser.open(loaded, { baseUrl: fixture.baseUrl, timeoutMs: 5_000 });
+      fixture.browsers.push(browser);
+      return browser;
+    },
+  });
+  assert.deepEqual(events, [{ type: 'history', sessionId: session.id, messages: [] }]);
+  assert.equal((await loadSession(session.id, fixture.root)).chatId, undefined);
+  assert.equal(fixture.requests.length, 0);
+  assert.equal(existsSync(join(session.directory, 'session.lock')), false);
 });

@@ -4,6 +4,11 @@ import { chromium, type BrowserContext, type Page, type Request, type Response }
 import lockfile from 'proper-lockfile';
 import { saveChatId, type Session } from './sessions.js';
 
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 interface BrowserOptions {
   baseUrl?: string;
   timeoutMs?: number;
@@ -261,6 +266,36 @@ export class JimmyBrowser {
       if (failed || persistenceError !== undefined) await this.close().catch(() => undefined);
       if (persistenceError !== undefined) throw persistenceError;
     }
+  }
+
+  async getMessages(): Promise<ChatMessage[]> {
+    if (this.closing !== undefined) throw new Error('The ChatJimmy browser is closed.');
+    if (this.session.chatId === undefined) return [];
+    const chatId = this.session.chatId;
+    const raw = await this.page.evaluate((id) => localStorage.getItem(`chat_${id}`), chatId);
+    if (raw === null) throw new Error(`Saved website chat ${chatId} is missing.`);
+    let history: unknown;
+    try {
+      history = JSON.parse(raw);
+    } catch (cause) {
+      throw new Error(`Saved website chat ${chatId} is corrupt.`, { cause });
+    }
+    if (!Array.isArray(history) || history.length === 0) {
+      throw new Error(`Saved website chat ${chatId} is corrupt.`);
+    }
+    const messages: ChatMessage[] = [];
+    for (const entry of history) {
+      if (entry === null || typeof entry !== 'object' || Array.isArray(entry)
+        || typeof entry.content !== 'string'
+        || (entry.role !== 'system' && entry.role !== 'user' && entry.role !== 'assistant')) {
+        throw new Error(`Saved website chat ${chatId} contains an invalid message.`);
+      }
+      if (entry.role !== 'system') messages.push({ role: entry.role, content: entry.content });
+    }
+    if (!messages.some((message) => message.role === 'user')) {
+      throw new Error(`Saved website chat ${chatId} is corrupt: no user messages.`);
+    }
+    return messages;
   }
 
   close(): Promise<void> {
