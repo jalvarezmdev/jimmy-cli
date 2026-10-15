@@ -6,7 +6,7 @@
   "bin": {
     "jimmy": "dist/cli.js"
   },
-  "files": ["dist/cli.js", "dist/browser.js", "dist/sessions.js"],
+  "files": ["dist/cli.js", "dist/browser.js", "dist/sessions.js", "dist/raycast.js"],
   "engines": {
     "node": ">=22"
   },
