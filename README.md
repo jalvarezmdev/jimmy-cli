@@ -7,11 +7,11 @@
 
 # Jimmy
 
-**Your terminal. Your workflow. ChatJimmy, one command away.**
+**Your terminal. Your launcher. ChatJimmy, one command away.**
 
-Explain a tricky bit of code. Find a better way to phrase something. Keep a useful conversation going without leaving your terminal.
+Explain a tricky bit of code. Find a better way to phrase something. Keep a useful conversation going from your terminal or Raycast.
 
-Jimmy is an **unofficial command-line companion for [ChatJimmy](https://chatjimmy.ai/), the chat experience provided by [Taalas](https://taalas.com/)**. It opens the real website in a dedicated headless Chromium browser, submits your message through the page, and brings the completed answer back to your console. No API-key configuration, local AI model, or extra AI agent required.
+Jimmy is an **unofficial terminal and Raycast companion for [ChatJimmy](https://chatjimmy.ai/), the chat experience provided by [Taalas](https://taalas.com/)**. It opens the real website in a dedicated headless Chromium browser, submits your message through the page, and brings the completed answer back to your console or launcher. No API-key configuration, local AI model, or extra AI agent required.
 
 ## Small interface. Useful everyday.
 
@@ -20,6 +20,7 @@ Jimmy is an **unofficial command-line companion for [ChatJimmy](https://chatjimm
 - **Keep your output useful.** Answers go to stdout; banners, session IDs, and errors go to stderr.
 - **Keep the formatting.** Original Markdown, code indentation, and line breaks survive the trip back to your terminal.
 - **See each turn clearly.** An orange startup banner, a delimited `YOU` input area, and breathing room between messages keep interactive chats readable.
+- **One shortcut closer.** Ask from Raycast, keep typing above the reply, and pick up the same saved conversation from your terminal.
 
 ## Install
 
@@ -56,6 +57,46 @@ jimmy --ask "Explain closures with a short JavaScript example" > answer.md
 ```
 
 The file receives only the answer. The ASCII banner and `Session: <uuid>` stay on stderr. Redirected streams have no color codes or interactive decorations; setting `NO_COLOR` disables the orange banner in a terminal too.
+
+## Bring Jimmy to Raycast
+
+Your next question shouldn't need another terminal tab. Open **Ask Jimmy**, type, and keep the conversation moving from Raycast. Your last answer stays visible while Jimmy works on the next one. Your saved CLI chats come with you, and **⌘K** keeps past answers and session controls close.
+
+**No API key. No Raycast Pro subscription.** The local macOS extension uses the same Jimmy backend, Chromium, and saved conversations you already installed.
+
+### Add the extension
+
+After completing the CLI installation above, run these commands from the repository:
+
+```sh
+npm --prefix raycast install
+npm --prefix raycast run dev
+```
+
+The setup automatically builds the backend and records the current repository and Node executable. There is no folder picker, Node-path lookup, or shell `PATH` configuration in Raycast. The extension's current development tooling requires **Node.js 22.22.2 or newer**.
+
+Press **Return** to send from the top bar. The input stays ready after each answer, and drafts typed while waiting stay put. For code or multiline prompts, use **⌘K → Write Multiline Message** (**⌘E**).
+
+Raycast's native split view keeps one **Jimmy** item on the left, not a sent-message history. While a request is running, it shows **🟠 Thinking…** with muted-gray text, and the previous reply stays visible on the right. New answers replace the displayed reply; **⌘K → Past replies** brings earlier responses back without losing the input. Raycast controls the Markdown reply font size; Jimmy preserves the original formatting.
+
+### Session and reply actions
+
+Open **⌘K** from the chat:
+
+| Action | Behavior |
+| --- | --- |
+| **Create a new session** | Start a fresh conversation. Its saved UUID is allocated when you send the first message. |
+| **Continue from a session** | Choose a saved UUID and restore its website history, including chats started in the CLI. |
+| **End session** | Stop an active request, wait for browser cleanup, and end the current view's session without deleting its saved conversation. |
+| **Past replies**, **Previous reply**, **Next reply** | Read earlier Jimmy responses one at a time without changing the conversation context for your next message. |
+| **Copy Answer**, **Paste Answer** | Use the currently displayed response elsewhere. |
+| **Session Details** | Copy the UUID or a `jimmy --session <uuid>` command. |
+
+The separate **Continue Conversation** Raycast command opens the same session picker. Sessions are ordered by the save time of their metadata, not the time of the latest follow-up.
+
+Raycast opens and closes a dedicated Chromium worker for each send or history read. An idle response view does not hold the session lock. Close an interactive CLI using a session before resuming it in Raycast, and vice versa. Closing a pending view cancels its worker; a cancelled or failed prompt is never automatically resent. ChatJimmy may already have saved that prompt, so inspect the saved conversation before deciding to send it again.
+
+Keep the repository and Node installation in place. After moving the repository or changing Node versions, rerun `npm --prefix raycast run dev` to refresh the automatically detected paths. During development, keep that command running for live reload; `npm --prefix raycast run build` also regenerates the local configuration and validates the extension.
 
 ## Conversations worth keeping
 
@@ -119,6 +160,8 @@ npm test
 ```
 
 Rebuild after editing TypeScript; the linked `jimmy` command uses the compiled files in `dist/`. Tests exercise real Chromium against local HTTP fixtures and use temporary filesystem sessions. They do not send prompts to ChatJimmy. Install Chromium before running them.
+
+The Raycast source uses `src/raycast.ts` as a newline-delimited JSON worker, rather than bundling Playwright into Raycast. `raycast/scripts/configure.mjs` generates the machine-local, gitignored `raycast/assets/runtime.json` before extension builds and development runs. Root tests cover browser history restoration, session locks, worker completion/cleanup, and cancellation against isolated local fixtures.
 
 ## Credits and service terms
 

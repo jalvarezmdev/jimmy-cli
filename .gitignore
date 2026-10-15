@@ -150,3 +150,7 @@ vite.config.ts.timestamp-*
 
 # macOS
 .DS_Store
+
+# Machine-local Raycast runtime paths and generated API types
+raycast/assets/runtime.json
+raycast/raycast-env.d.ts

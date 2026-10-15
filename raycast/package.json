@@ -1,0 +1,41 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "jimmy",
+  "title": "Jimmy",
+  "description": "Ask ChatJimmy and continue your saved Jimmy conversations from Raycast.",
+  "icon": "jimmy-logo.png",
+  "author": "jalvarezmdev",
+  "platforms": ["macOS"],
+  "categories": ["Productivity", "Communication"],
+  "private": true,
+  "commands": [
+    {
+      "name": "ask-jimmy",
+      "title": "Ask Jimmy",
+      "description": "Start a ChatJimmy conversation and copy or paste the answer.",
+      "mode": "view"
+    },
+    {
+      "name": "continue-conversation",
+      "title": "Continue Conversation",
+      "subtitle": "Jimmy",
+      "description": "Resume a saved Jimmy conversation, including chats started in the CLI.",
+      "mode": "view"
+    }
+  ],
+  "scripts": {
+    "prebuild": "node scripts/configure.mjs",
+    "predev": "node scripts/configure.mjs",
+    "build": "ray build -e dist",
+    "dev": "ray develop"
+  },
+  "dependencies": {
+    "@raycast/api": "^2.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.17",
+    "@types/react": "19.0.10",
+    "react-devtools": "6.1.1",
+    "typescript": "^5.9.0"
+  }
+}
