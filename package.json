@@ -1,0 +1,28 @@
+{
+  "name": "chatjimmy-console",
+  "version": "1.0.0",
+  "description": "A minimal terminal client for the ChatJimmy website",
+  "type": "module",
+  "bin": {
+    "jimmy": "dist/cli.js"
+  },
+  "files": ["dist/cli.js", "dist/browser.js", "dist/sessions.js"],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test dist/*.test.js",
+    "prepare": "npm run build",
+    "browser:install": "playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.61.1",
+    "proper-lockfile": "^4.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/proper-lockfile": "^4.1.4",
+    "typescript": "^5.9.0"
+  }
+}
