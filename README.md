@@ -1,57 +1,127 @@
+```text
+   __  __  _  _  _  _  _  _ 
+ _(  )(  )( \/ )( \/ )( \/ )
+/ \) \ )( / \/ \/ \/ \ )  / 
+\____/(__)\_)(_/\_)(_/(__/
+```
+
 # Jimmy
 
-Chat with [ChatJimmy](https://chatjimmy.ai/) from your terminal. Jimmy operates the actual webpage in a dedicated headless Chromium browser; it does not call the chat API directly or use another AI agent.
+**Your terminal. Your workflow. ChatJimmy, one command away.**
+
+Explain a tricky bit of code. Find a better way to phrase something. Keep a useful conversation going without leaving your terminal.
+
+Jimmy is an **unofficial command-line companion for [ChatJimmy](https://chatjimmy.ai/), the chat experience provided by [Taalas](https://taalas.com/)**. It opens the real website in a dedicated headless Chromium browser, submits your message through the page, and brings the completed answer back to your console. No API-key configuration, local AI model, or extra AI agent required.
+
+## Small interface. Useful everyday.
+
+- **Chat your way.** Start an interactive conversation or send a single question and get back to work.
+- **Pick up where you left off.** Every chat gets a UUID you can use to resume it later.
+- **Keep your output useful.** Answers go to stdout; banners, session IDs, and errors go to stderr.
+- **Keep the formatting.** Original Markdown, code indentation, and line breaks survive the trip back to your terminal.
+- **See each turn clearly.** An orange startup banner, a delimited `YOU` input area, and breathing room between messages keep interactive chats readable.
 
 ## Install
 
-Requires Node.js 22 or newer and npm.
+You need **Node.js 22 or newer**, **npm**, **Git**, and an internet connection. The first browser setup downloads Chromium; you do not need to configure your everyday Chrome profile.
 
 ```sh
+git clone https://github.com/jalvarezmdev/jimmy-cli.git
+cd jimmy-cli
 npm install
 npm run browser:install
 npm link
 ```
 
-`npm install` builds the TypeScript source. Rebuild after source changes with `npm run build`.
+`npm install` builds the CLI. `npm link` makes the `jimmy` command available through npm's global executable directory; that directory must be on your `PATH`.
 
-## Use
+Because this is a linked installation, keep the cloned folder in place while you use Jimmy. There is no npm-registry installation required.
+
+## Three commands. That's it.
 
 ```sh
 jimmy                       # Start a new interactive chat
-jimmy --ask "Explain this"  # Send one prompt, print its answer, exit
-jimmy --session <uuid>       # Resume an existing chat interactively
+jimmy --ask "Explain this"   # Ask once, print the answer, exit
+jimmy --session <uuid>       # Resume a saved chat interactively
 ```
 
-These are the only command forms; `--ask` and `--session` cannot be combined. In interactive mode, Enter sends a message, Ctrl+D exits, and Ctrl+C interrupts. Blank interactive lines are ignored. A quoted `--ask` argument can contain multiple lines.
+In interactive mode, **Enter** sends, **Ctrl+D** exits, and **Ctrl+C** interrupts. Blank lines are ignored. For a multiline one-shot prompt, include the line breaks inside the quoted `--ask` argument.
 
-In a terminal, a `YOU` heading and horizontal lines delimit your input, with a blank line before Jimmy's response and between turns.
+`--ask` and `--session` are separate modes and cannot be combined. There are no additional command modes or flags.
 
-The startup ASCII banner is orange in terminals (`NO_COLOR` disables coloring). The banner and `Session: <uuid>` are printed to stderr. Redirected output has no ANSI color codes. Answers alone go to stdout, so redirecting a one-shot answer does not capture the banner:
+### Take the answer with you
 
 ```sh
-jimmy --ask "Explain closures" > answer.txt
+jimmy --ask "Explain closures with a short JavaScript example" > answer.md
 ```
 
-## Saved sessions
+The file receives only the answer. The ASCII banner and `Session: <uuid>` stay on stderr. Redirected streams have no color codes or interactive decorations; setting `NO_COLOR` disables the orange banner in a terminal too.
 
-Every new chat receives a UUID. Its metadata and private browser profile are saved under `~/.jimmy/sessions/<uuid>/`. Copy the printed UUID to resume it later; no account or everyday Chrome profile is shared between sessions.
+## Conversations worth keeping
 
-A session becomes a resumable website conversation after its first message is saved by ChatJimmy. Opening a session that has never received a message starts its first conversation. Invalid or unknown UUIDs fail explicitly. Missing or corrupt saved website history is an error, not a replacement conversation. An exclusive filesystem lock rejects concurrent use of the same session and is released when its browser closes.
+Every new chat is saved under:
 
-Session profiles contain conversation history and browser data on disk, unencrypted. Do not send sensitive information you do not want the website to receive. To remove a saved chat, close Jimmy and remove that UUID's directory.
+```text
+~/.jimmy/sessions/<uuid>/
+  session.json
+  browser/
+```
 
-## Completion and failures
+Copy the UUID printed at startup to resume that conversation later. Each session has its own browser profile, separate from other sessions and from your usual Chrome data. An exclusive lock prevents two Jimmy processes from using the same session simultaneously.
 
-Jimmy waits for the submission's successful transport, a successful completion trailer, a new reply's generation badge, and the idle composer before returning the reply. Answer text comes from the response stream initiated by the webpage, not a separate API call. Original Markdown, indentation, and line breaks are preserved; the internal generation-statistics trailer is removed.
+A website conversation becomes resumable after ChatJimmy saves its first message. A session opened and closed without sending anything starts its first conversation when resumed. Unknown UUIDs and missing or corrupt saved conversations fail explicitly rather than silently creating a replacement.
 
-HTTP failures, aborted or incomplete streams, and unsuccessful generation are errors. A reply has a two-minute completion deadline; partial or previous answers are never returned as successful output, and prompts are never automatically resent. Errors go to stderr with a nonzero exit status.
+**Local storage is not local inference.** Browser data and conversation history are saved on disk, unencrypted, and your prompts are sent to ChatJimmy. Do not submit information you do not want the service to receive.
 
-The adapter depends on the website's current markup and completion format. UI changes, maintenance, or access restrictions may require an update. Review the service's [terms](https://taalas.com/terms-conditions/) before using an automated client; browser access is not itself permission to automate.
+## Complete answers, not guesses
 
-## Development checks
+Jimmy waits for the page-initiated request to finish successfully, validates its completion trailer, and checks that the new reply has its own generation badge and the composer has returned to idle. It then returns the original reply text, excluding internal generation statistics.
+
+If a request fails, the stream is incomplete, or generation does not complete within two minutes, Jimmy exits with an error instead of returning a partial or previous answer as success. It never automatically resends your prompt. A completed answer is not a guarantee of factual accuracy; review AI output before relying on it.
+
+This client depends on ChatJimmy's current page structure and response format. Website updates, maintenance, or access restrictions can require an adapter update.
+
+## Uninstall
+
+Close any running Jimmy sessions, then remove the globally linked command:
 
 ```sh
+npm unlink --global chatjimmy-console
+```
+
+The npm package is named **`chatjimmy-console`**; the command it exposes is **`jimmy`**. Unlinking removes the global command, not your cloned repository or saved conversations. You can delete the clone afterward if you no longer need the source.
+
+### Optional: remove browser downloads
+
+Before deleting the clone or its dependencies, run this **from the cloned repository**:
+
+```sh
+npx playwright uninstall
+```
+
+Playwright manages a shared browser cache. This command unregisters this installation and removes browser downloads no longer needed by other registered Playwright installations. Avoid `--all`: it targets browser downloads for other installations too.
+
+### Optional: remove saved conversations
+
+The following command **permanently deletes every saved Jimmy session**, including its browser profile. Only run it after closing all Jimmy processes and deciding you no longer need those conversations:
+
+```sh
+rm -rf "$HOME/.jimmy"
+```
+
+To keep other chats, remove only the chosen UUID's directory under `~/.jimmy/sessions/` instead.
+
+## Development
+
+```sh
+npm run build
 npm test
 ```
 
-Tests use local HTTP fixtures with real Chromium plus temporary filesystem sessions. They do not submit prompts to ChatJimmy. Install Chromium before running them.
+Rebuild after editing TypeScript; the linked `jimmy` command uses the compiled files in `dist/`. Tests exercise real Chromium against local HTTP fixtures and use temporary filesystem sessions. They do not send prompts to ChatJimmy. Install Chromium before running them.
+
+## Credits and service terms
+
+**The chat service deserves the credit:** [ChatJimmy](https://chatjimmy.ai/) and [Taalas](https://taalas.com/) provide the website and hosted AI inference. This repository adds the terminal interface and browser automation; it does not build, host, or claim ownership of their service or AI models.
+
+Jimmy CLI is an independent, unofficial project and is not affiliated with or endorsed by Taalas. Please review the service's [Terms and Conditions](https://taalas.com/terms-conditions/) and [Privacy Policy](https://taalas.com/privacy-policy/) before use. Access to the website does not itself establish permission to automate it.
